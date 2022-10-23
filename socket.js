@@ -16,6 +16,7 @@ const generateCode = () => {
 const createUser = (socket) => {
   let user = {
     id: socket.id,
+    isPaused: false,
   }
   socket.user = user
   users.push(user)

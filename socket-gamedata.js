@@ -1,0 +1,5 @@
+var seedrandom = require("seedrandom")
+var rng = seedrandom("hellfafao.")
+console.log(rng())
+console.log(rng())
+console.log(rng())

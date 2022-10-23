@@ -95,6 +95,22 @@ io.on("connect", (socket) => {
       io.to(room.id).emit("gameStarted", room)
     }
   })
+  socket.on("pause", () => {
+    const room = getUserRoom(socket.user)
+    socket.user.isPaused = true
+    if (room) {
+      io.to(room.id).emit("paused")
+    }
+  })
+  socket.on("resume", () => {
+    const room = getUserRoom(socket.user)
+    socket.user.isPaused = false
+    if (room) {
+      if (!room.members.player1?.isPaused && !room.members.player2?.isPaused) {
+        io.to(room.id).emit("resumed")
+      }
+    }
+  })
 })
 
 const PORT = process.env.PORT || 8080

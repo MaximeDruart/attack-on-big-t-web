@@ -1,4 +1,6 @@
 import Phaser from "phaser"
+import seedrandom from "seedrandom"
+
 import { socket } from "./socket-client"
 
 import baseImg from "./assets/img/base.png"
@@ -335,7 +337,11 @@ class WorldScene extends Phaser.Scene {
     this.room = data.room
     this.playerNumber = data.room.members["player1"].id === socket.id ? 1 : 2
     this.otherPlayerNumber = this.playerNumber === 1 ? 2 : 1
-    console.log(this.playerNumber, this.otherPlayerNumber)
+    this.rng = seedrandom(data.room.code)
+
+    this.rnd = new Phaser.Math.RandomDataGenerator(data.room.code)
+
+    //
   }
 
   setGameOver() {
@@ -426,7 +432,7 @@ class WorldScene extends Phaser.Scene {
 
     this.spawnText("blockTextImg")
     this.fullScreenText.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      const randomKeyIndex = () => Math.floor(Math.random() * 4)
+      const randomKeyIndex = () => Math.floor(this.rng() * 4)
       const randomKeyIndexes = new Array(4).fill("").map(() => randomKeyIndex())
       const chars = ["a", "x", "i", "s"]
       this.sequence = [
@@ -527,9 +533,9 @@ class WorldScene extends Phaser.Scene {
     const distanceRandomness = 140
 
     enemies.forEach((enemy) => {
-      const angle = Phaser.Math.DegToRad(Phaser.Math.Between(10, 170) + 180)
+      const angle = Phaser.Math.DegToRad(this.rnd.between(10, 170) + 180)
       let pos = new Phaser.Math.Vector2(0, 0)
-      pos = pos.setToPolar(angle, radius + Phaser.Math.Between(0, distanceRandomness))
+      pos = pos.setToPolar(angle, radius + this.rnd.between(0, distanceRandomness))
       pos = {
         x: pos.x + this.base.pos.x,
         y: pos.y + this.base.pos.y + this.base.height / 2,
@@ -542,13 +548,13 @@ class WorldScene extends Phaser.Scene {
     this.isRunningTearDelayMalus = false
 
     this.malusProbability = 0.3 + 0.03 * this.waveNumber
-    const triggerMalus = Math.random() < this.malusProbability
+    const triggerMalus = this.rng() < this.malusProbability
 
     if (triggerMalus && this.waveNumber !== 0) {
-      const ranIndex = Math.floor(Math.random() * 3)
+      const ranIndex = Math.floor(this.rng() * 2)
       if (ranIndex === 0) this.invertControlsMalus()
       if (ranIndex === 1) this.increaseTearDelayMalus()
-      if (ranIndex === 2) this.qteMalus()
+      // if (ranIndex === 2) this.qteMalus()
     }
 
     // big t
@@ -595,8 +601,16 @@ class WorldScene extends Phaser.Scene {
     this.addAxisControls()
     this.addEnemyBulletOverlapCheck()
     this.createUI()
+    this.createPauseUI()
 
     this.listenSocket()
+
+    window.addEventListener("blur", () => {
+      socket.emit("pause")
+    })
+    window.addEventListener("focus", () => {
+      socket.emit("resume")
+    })
   }
 
   initBonuses() {
@@ -606,7 +620,7 @@ class WorldScene extends Phaser.Scene {
   }
 
   createBonus(x, y) {
-    this.bonuses.create(x, y, bonusesStatsKey[Math.floor(Math.random() * bonusesStatsKey.length)])
+    this.bonuses.create(x, y, bonusesStatsKey[Math.floor(this.rng() * bonusesStatsKey.length)])
   }
 
   updateScore(inc) {
@@ -619,21 +633,20 @@ class WorldScene extends Phaser.Scene {
   createUI() {
     // idk but it works
     document.fonts.ready.then(() => {
-      this.scoreTextNull = this.add.text(500, 0, "000000", { fontFamily: "retrograde", fill: "#ffffff" })
+      this.scoreTextNull = this.add.text(500, 0, "000000", { fontFamily: "retrograde, Courier", fill: "#ffffff" })
 
       this.scoreTextNull.alpha = 0
     })
 
-    document.fonts.onloadingdone = (fontFaceSetEvent) => {
-      this.scoreText = this.add
-        .text(630, 0, "000000", { fontFamily: "retrograde, Courier", fill: "#ffffff" })
-        .setOrigin(1, 0)
-    }
+    document.fonts.onloadingdone = (fontFaceSetEvent) => {}
+    this.scoreText = this.add
+      .text(630, 0, "000000", { fontFamily: "retrograde, Courier", fill: "#ffffff" })
+      .setOrigin(1, 0)
     this.livesText = this.add
-      .text(5, 25, `LIVES: ${this.base.lives}`, { fontFamily: "retrograde", fill: "#ffffff" })
+      .text(5, 25, `LIVES: ${this.base.lives}`, { fontFamily: "retrograde, Courier", fill: "#ffffff" })
       .setOrigin(0, 0)
     this.hpText = this.add
-      .text(5, 5, `HP: ${this.base.hp}`, { fontFamily: "retrograde", fill: "#ffffff" })
+      .text(5, 5, `HP: ${this.base.hp}`, { fontFamily: "retrograde, Courier", fill: "#ffffff" })
       .setOrigin(0, 0)
 
     const color = 0x000000 // mult
@@ -683,6 +696,34 @@ class WorldScene extends Phaser.Scene {
     )
 
     this.laserIconGraphics.setBlendMode(Phaser.BlendModes.DIFFERENCE)
+  }
+
+  createPauseUI() {
+    const color = 0x000000 // mult
+    const alpha = 0.5
+    this.pauseGraphics = this.add.graphics({ x: 0, y: 0 })
+    this.pauseGraphics.setDepth(100)
+    this.pauseGraphics.fillStyle(color, alpha)
+    this.pauseGraphics.fillRect(0, 0, 640, 360)
+
+    document.fonts.ready.then(() => {
+      this.scoreTextNull = this.add.text(500, 0, "000000", { fontFamily: "retrograde, Courier", fill: "#ffffff" })
+
+      this.scoreTextNull.alpha = 0
+    })
+
+    document.fonts.onloadingdone = (fontFaceSetEvent) => {
+      this.pauseText = this.add.text(center.x, center.y, "GAME PAUSED, FOCUS TO RESUME", {
+        fontFamily: "retrograde, Courier",
+        fill: "#ffffff",
+      })
+      this.pauseText.x -= this.pauseText.width / 2
+
+      this.pauseGraphics.setActive(false)
+      this.pauseGraphics.setVisible(false)
+      this.pauseText.setActive(false)
+      this.pauseText.setVisible(false)
+    }
   }
 
   updateUI() {
@@ -816,13 +857,27 @@ class WorldScene extends Phaser.Scene {
 
   listenSocket() {
     socket.on("kbStatusReceived", (data) => {
-      console.log(data)
       // set player2 state from kbStatus data
       this.joystickX[this.otherPlayerNumber] = data.joystickX
       this.isShooting[this.otherPlayerNumber] = data.isShooting
       this.isShielding[this.otherPlayerNumber] = data.isShielding
       this.isShootingHook[this.otherPlayerNumber] = data.isShootingHook
       this.isLasering[this.otherPlayerNumber] = data.isLasering
+    })
+
+    socket.on("paused", () => {
+      this.pauseGraphics.setActive(true)
+      this.pauseGraphics.setVisible(true)
+      this.pauseText.setActive(true)
+      this.pauseText.setVisible(true)
+      this.scene.pause("WorldScene")
+    })
+    socket.on("resumed", () => {
+      this.pauseGraphics.setActive(false)
+      this.pauseGraphics.setVisible(false)
+      this.pauseText.setActive(false)
+      this.pauseText.setVisible(false)
+      this.scene.resume("WorldScene")
     })
   }
 
@@ -883,7 +938,6 @@ class WorldScene extends Phaser.Scene {
   }
 
   keyDownHandler(e, playerNumber) {
-    console.log(e.key)
     if (this.isListeningQTE) {
       this.qteValidate(e.key, playerNumber)
       return
@@ -916,12 +970,10 @@ class WorldScene extends Phaser.Scene {
   }
 
   keyUpHandler(e, playerNumber) {
-    console.log(e.key)
     // spoace
     if (e.keyCode === 32) this.isShooting[playerNumber] = false
 
     if (e.key == "z") {
-      console.log("set shootHook false")
       this.isShootingHook[playerNumber] = false
     }
 
@@ -977,9 +1029,9 @@ class WorldScene extends Phaser.Scene {
     const otherPlayerLinear = this.players.children.entries.filter((p) => p.playerNumber !== playerNumber)[0]
       .linearPosition
 
-    console.log(this.joystickX[playerNumber])
+    const inverted = player.invertedControls ? -1 : 1
 
-    player.movePlayer(this.joystickX[playerNumber], otherPlayerLinear)
+    player.movePlayer(this.joystickX[playerNumber] * inverted, otherPlayerLinear)
   }
 
   listenToPlayerControls(time) {}
@@ -1029,7 +1081,7 @@ class WorldScene extends Phaser.Scene {
     this.waveKills++
     if (this.isRunningTearDelayMalus) this.updateTearDelayMalus()
     this.updateScore(enemy.stats.hp * 5)
-    if (Math.random() < this.bonusDropChance) {
+    if (this.rng() < this.bonusDropChance) {
       this.createBonus(enemy.x, enemy.y)
     }
     enemy.kill()

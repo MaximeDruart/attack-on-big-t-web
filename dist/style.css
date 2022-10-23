@@ -25,5 +25,5 @@ body {
 
 @font-face {
   font-family: retrograde;
-  src: url("/retrograde.ttf");
+  src: url("./retrograde.ttf");
 }
