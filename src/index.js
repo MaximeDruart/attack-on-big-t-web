@@ -1,4 +1,5 @@
 import Phaser from "phaser"
+import { socket } from "./socket-client"
 
 import baseImg from "./assets/img/base.png"
 import hubTopImg from "./assets/img/hubTop.png"
@@ -75,7 +76,6 @@ import ScoreScene from "./scenes/ScoreScene"
 
 import GrayScalePipeline from "./pipelines/grayScale"
 
-import { gamepadEmulator, player1axis, player2axis, leaderboard } from "./axis"
 import { center, bonusesStatsKey } from "./constants"
 import { enemyData } from "./enemyData"
 import { mapRange } from "./utils"
@@ -331,14 +331,14 @@ class WorldScene extends Phaser.Scene {
     super("WorldScene")
   }
 
-  setGameOver() {
-    player1axis.removeEventListener("joystick:move", this.joystick1HandlerBinded)
-    player2axis.removeEventListener("joystick:move", this.joystick2HandlerBinded)
+  init(data) {
+    this.room = data.room
+    this.playerNumber = data.room.members["player1"].id === socket.id ? 1 : 2
+    this.otherPlayerNumber = this.playerNumber === 1 ? 2 : 1
+    console.log(this.playerNumber, this.otherPlayerNumber)
+  }
 
-    player1axis.removeEventListener("keydown", this.keyDownFn1)
-    player2axis.removeEventListener("keydown", this.keyDownFn2)
-    player1axis.removeEventListener("keyup", this.keyUpFn1)
-    player2axis.removeEventListener("keyup", this.keyUpFn2)
+  setGameOver() {
     this.sound.pauseAll()
     this.scene.start("GameOverScene", { score: this.score })
   }
@@ -569,6 +569,8 @@ class WorldScene extends Phaser.Scene {
   }
 
   create() {
+    // listen for the room to be full to start game
+
     this.bg = this.add.sprite(0, 0, "bg").setOrigin(0, 0)
     this.bg.play("bg")
     this.bigT = this.add.sprite(center.x, center.y, "bigT")
@@ -590,13 +592,11 @@ class WorldScene extends Phaser.Scene {
     this.initBonuses()
     this.addHookBonusOverlapCheck()
 
-    this.cursors = this.input.keyboard.createCursorKeys()
-    this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E)
-    this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-
     this.addAxisControls()
     this.addEnemyBulletOverlapCheck()
     this.createUI()
+
+    this.listenSocket()
   }
 
   initBonuses() {
@@ -814,6 +814,18 @@ class WorldScene extends Phaser.Scene {
     )
   }
 
+  listenSocket() {
+    socket.on("kbStatusReceived", (data) => {
+      console.log(data)
+      // set player2 state from kbStatus data
+      this.joystickX[this.otherPlayerNumber] = data.joystickX
+      this.isShooting[this.otherPlayerNumber] = data.isShooting
+      this.isShielding[this.otherPlayerNumber] = data.isShielding
+      this.isShootingHook[this.otherPlayerNumber] = data.isShootingHook
+      this.isLasering[this.otherPlayerNumber] = data.isLasering
+    })
+  }
+
   addAxisControls() {
     this.joystickX = {
       1: 0,
@@ -861,47 +873,38 @@ class WorldScene extends Phaser.Scene {
     this.laserSyncRemainingTime = this.laserSyncWindow
     this.laserRemainingCooldown = 0
 
-    this.joystick1HandlerBinded = this.player1JoystickMoveHandler.bind(this)
-    this.joystick2HandlerBinded = this.player2JoystickMoveHandler.bind(this)
-    player1axis.addEventListener("joystick:move", this.joystick1HandlerBinded)
-    player2axis.addEventListener("joystick:move", this.joystick2HandlerBinded)
-
     const keyDownHandler = this.keyDownHandler.bind(this)
-    this.keyDownFn1 = (e) => keyDownHandler(e, 1)
-    this.keyDownFn2 = (e) => keyDownHandler(e, 2)
-    player1axis.addEventListener("keydown", this.keyDownFn1)
-    player2axis.addEventListener("keydown", this.keyDownFn2)
+    this.keyDownFn1 = (e) => keyDownHandler(e, this.playerNumber)
+    this.input.keyboard.on("keydown", this.keyDownFn1)
 
     const keyUpHandler = this.keyUpHandler.bind(this)
-    this.keyUpFn1 = (e) => keyUpHandler(e, 1)
-    this.keyUpFn2 = (e) => keyUpHandler(e, 2)
-    player1axis.addEventListener("keyup", this.keyUpFn1)
-    player2axis.addEventListener("keyup", this.keyUpFn2)
-  }
-
-  player1JoystickMoveHandler(e) {
-    if (this.isListeningQTE) return
-
-    this.joystickX["1"] = this.players.children.entries[0].invertedControls ? -e.position.x : e.position.x
-  }
-  player2JoystickMoveHandler(e) {
-    if (this.isListeningQTE) return
-    this.joystickX["2"] = this.players.children.entries[1].invertedControls ? -e.position.x : e.position.x
+    this.keyUpFn1 = (e) => keyUpHandler(e, this.playerNumber)
+    this.input.keyboard.on("keyup", this.keyUpFn1)
   }
 
   keyDownHandler(e, playerNumber) {
+    console.log(e.key)
     if (this.isListeningQTE) {
       this.qteValidate(e.key, playerNumber)
       return
     }
 
-    if (e.key === "a") this.isShooting[playerNumber] = true
-    if (e.key === "x") {
+    if (e.key === "ArrowLeft") this.joystickX[playerNumber] = -0.5
+    if (e.key === "ArrowRight") this.joystickX[playerNumber] = 0.5
+
+    // space
+    if (e.keyCode === 32) {
+      this.isShooting[playerNumber] = true
+    }
+    if (e.key === "a") {
       if (this.shieldRemainingCooldown === 0) {
         this.isShielding[playerNumber] = true
       }
     }
-    if (e.key === "w") {
+
+    if (e.key == "z") this.isShootingHook[playerNumber] = true
+
+    if (e.key === "e") {
       if (this.laserRemainingCooldown === 0) {
         this.isLasering[playerNumber] = true
       }
@@ -910,48 +913,84 @@ class WorldScene extends Phaser.Scene {
         this.laserRemainingCooldown = Math.max(this.laserRemainingCooldown, 0)
       }
     }
-    if (e.key == "i") this.isShootingHook[playerNumber] = true
   }
 
   keyUpHandler(e, playerNumber) {
-    if (e.key === "a") this.isShooting[playerNumber] = false
+    console.log(e.key)
+    // spoace
+    if (e.keyCode === 32) this.isShooting[playerNumber] = false
 
-    if (e.key == "i") this.isShootingHook[playerNumber] = false
+    if (e.key == "z") {
+      console.log("set shootHook false")
+      this.isShootingHook[playerNumber] = false
+    }
+
+    if (e.key === "ArrowLeft" && this.joystickX[playerNumber] === -0.5) this.joystickX[playerNumber] = 0
+    if (e.key === "ArrowRight" && this.joystickX[playerNumber] === 0.5) this.joystickX[playerNumber] = 0
   }
 
-  handleControls(player, time) {
-    const otherPlayerLinear = this.players.children.entries.filter((p) => p.playerNumber !== player.playerNumber)[0]
-      .linearPosition
-
-    // controller / axis controls
-    if (this.joystickX[player.playerNumber] !== 0) {
-      player.movePlayer(this.joystickX[player.playerNumber], otherPlayerLinear)
+  test() {
+    const kbStatus = {
+      A: false,
+      Z: false,
+      E: false,
+      spaceBar: false,
+      left: false,
+      right: false,
     }
+  }
 
-    if (this.isShooting[player.playerNumber]) {
+  sendKbStatus() {
+    const kbStatus = {
+      joystickX: this.joystickX[this.playerNumber],
+      isShooting: this.isShooting[this.playerNumber],
+      isShielding: this.isShielding[this.playerNumber],
+      isShootingHook: this.isShootingHook[this.playerNumber],
+      isLasering: this.isLasering[this.playerNumber],
+    }
+    socket.emit("sendKbStatus", kbStatus)
+  }
+
+  isKbStatusDifferent(kbStatus1, kbStatus2) {
+    return (
+      kbStatus1.A !== kbStatus2.A ||
+      kbStatus1.Z !== kbStatus2.Z ||
+      kbStatus1.E !== kbStatus2.E ||
+      kbStatus1.spaceBar !== kbStatus2.spaceBar ||
+      kbStatus1.left !== kbStatus2.left ||
+      kbStatus1.right !== kbStatus2.right
+    )
+  }
+
+  handleKbStatus(playerNumber, time) {
+    const player = this.players.children.entries[playerNumber - 1]
+    // console.log(this.isShooting)
+    if (this.isShooting[playerNumber]) {
       player.shoot(time)
     }
-    if (this.isShootingHook[player.playerNumber]) {
+    if (this.isShootingHook[playerNumber]) {
       player.shootHook()
     } else {
       player.stopHook()
     }
 
-    // keyboard controls
-    if (this.cursors.left.isDown) {
-      player.movePlayer(-1, otherPlayerLinear)
-    } else if (this.cursors.right.isDown) {
-      player.movePlayer(1, otherPlayerLinear)
-    }
-    if (this.spaceBar.isDown) player.shoot(time)
+    const otherPlayerLinear = this.players.children.entries.filter((p) => p.playerNumber !== playerNumber)[0]
+      .linearPosition
+
+    console.log(this.joystickX[playerNumber])
+
+    player.movePlayer(this.joystickX[playerNumber], otherPlayerLinear)
   }
 
-  handleInputs(time, delta) {
-    gamepadEmulator.update()
+  listenToPlayerControls(time) {}
 
-    this.players.children.each((player) => {
-      this.handleControls(player, time)
-    })
+  handleInputs(time, delta) {
+    this.handleKbStatus(this.playerNumber, time)
+    this.sendKbStatus()
+    this.handleKbStatus(this.otherPlayerNumber, time)
+    // this.players.children.each((player) => {
+    //   this.handleKbStatus(player, time)
+    // })
   }
 
   checkBulletVsEnemy(bullet, enemy) {
@@ -1099,6 +1138,7 @@ class WorldScene extends Phaser.Scene {
   }
 
   update(time, delta) {
+    // this.time = time
     this.handleInputs(time, delta)
 
     // check for enemy hit
@@ -1126,7 +1166,6 @@ class WorldScene extends Phaser.Scene {
     this.updateUI()
 
     // anims
-
     this.bigT.setPosition(center.x, center.y + Math.sin(time * 0.001) * 10)
   }
 }
@@ -1136,7 +1175,7 @@ const config = {
   parent: "content",
   width: 640,
   height: 360,
-  zoom: 4,
+  zoom: 3,
   fps: {
     target: 60,
   },

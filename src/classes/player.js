@@ -101,6 +101,7 @@ class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   setPositionFromLinear() {
+    // console.log(this.linearPosition)
     const az = this.linearPosition * Math.PI - Math.PI
     const radius = this.base.height + 12
     let pos = new Phaser.Math.Vector2(0, 0)
